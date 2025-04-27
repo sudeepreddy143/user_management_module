@@ -368,7 +368,7 @@ async def update_professional_status(
     update_data = {"is_professional": is_professional}
     updated_user = await UserService.update_professional_status(db, user_id, is_professional)
     user_links = create_user_links(updated_user.id, request)
-    user_links = add_professional_status_link(user_links, updated_user.id, request)
+
     
     return UserResponse.model_construct(
         id=updated_user.id,
