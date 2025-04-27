@@ -1,3 +1,5 @@
+
+
 from builtins import ValueError, any, bool, str
 from pydantic import BaseModel, EmailStr, Field, validator, root_validator
 from typing import Optional, List
@@ -7,28 +9,35 @@ import uuid
 import re
 from app.models.user_model import UserRole
 from app.utils.nickname_gen import generate_nickname
-
+from app.schemas.pagination_schema import PaginationLink
 
 def validate_url(url: Optional[str]) -> Optional[str]:
     if url is None:
         return url
-    url_regex = r'^https?:\/\/[^\s/$.?#].[^\s]*$'
+    # More comprehensive URL validation
+    url_regex = r'^https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$'
     if not re.match(url_regex, url):
-        raise ValueError('Invalid URL format')
+        raise ValueError('Invalid URL format. Must be a valid HTTP/HTTPS URL.')
     return url
 
 class UserBase(BaseModel):
     email: EmailStr = Field(..., example="john.doe@example.com")
     nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())
-    first_name: Optional[str] = Field(None, example="John")
-    last_name: Optional[str] = Field(None, example="Doe")
-    bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
+    first_name: Optional[str] = Field(None, pattern=r'^[a-zA-Z\s\-\']{2,50}$', example="John")
+    last_name: Optional[str] = Field(None, pattern=r'^[a-zA-Z\s\-\']{2,50}$', example="Doe")
+    bio: Optional[str] = Field(None, max_length=500, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
     role: UserRole
 
     _validate_urls = validator('profile_picture_url', 'linkedin_profile_url', 'github_profile_url', pre=True, allow_reuse=True)(validate_url)
+    
+    @validator('first_name', 'last_name')
+    def validate_names(cls, v):
+        if v is not None and (len(v) < 2 or len(v) > 50):
+            raise ValueError('Name must be between 2 and 50 characters')
+        return v
  
     class Config:
         from_attributes = True
@@ -36,23 +45,81 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     email: EmailStr = Field(..., example="john.doe@example.com")
     password: str = Field(..., example="Secure*1234")
+    
+    @validator('password')
+    def validate_password(cls, v):
+        """
+        Validate password complexity:
+        - At least 8 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+        - At least one special character
+        """
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+            
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+            
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+            
+        if not re.search(r'[^A-Za-z0-9]', v):
+            raise ValueError('Password must contain at least one special character')
+            
+        return v
+    
+    @validator('email')
+    def validate_email_domain(cls, v):
+        # Additional validation beyond Pydantic's EmailStr
+        domain = v.split('@')[1]
+        if domain.endswith('.test') or domain.endswith('.example'):
+            raise ValueError('Email domain is not valid')
+        return v
 
 class UserUpdate(UserBase):
     email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
     nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example="john_doe123")
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
-    bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
+    bio: Optional[str] = Field(None, max_length=500, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
     role: Optional[str] = Field(None, example="AUTHENTICATED")
+    password: Optional[str] = Field(None, example="NewSecure*5678")
 
     @root_validator(pre=True)
     def check_at_least_one_value(cls, values):
         if not any(values.values()):
             raise ValueError("At least one field must be provided for update")
         return values
+        
+    @validator('password')
+    def validate_update_password(cls, v):
+        if v is None:
+            return v
+            
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+            
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+            
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+            
+        if not re.search(r'[^A-Za-z0-9]', v):
+            raise ValueError('Password must contain at least one special character')
+            
+        return v
 
 class UserResponse(UserBase):
     id: uuid.UUID = Field(..., example=uuid.uuid4())
@@ -81,3 +148,46 @@ class UserListResponse(BaseModel):
     total: int = Field(..., example=100)
     page: int = Field(..., example=1)
     size: int = Field(..., example=10)
+    
+class UserSearchResponse(BaseModel):
+    """Response model for user search results"""
+    items: List[UserResponse] = Field(..., description="List of users matching search criteria")
+    total: int = Field(..., description="Total number of users matching search criteria")
+    page: int = Field(..., description="Current page number")
+    pages: int = Field(..., description="Total number of pages")
+    per_page: int = Field(..., description="Number of items per page")
+    links: List[PaginationLink] = Field(default_factory=list, 
+                                       description="Navigation links for pagination")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "items": [
+                    {
+                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "email": "john.doe@example.com",
+                        "nickname": "john_doe",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "role": "AUTHENTICATED",
+                        "created_at": "2023-01-01T12:00:00Z"
+                    }
+                ],
+                "total": 42,
+                "page": 1,
+                "pages": 5,
+                "per_page": 10,
+                "links": [
+                    {
+                        "rel": "self",
+                        "href": "https://api.example.com/users?page=1&per_page=10",
+                        "method": "GET"
+                    },
+                    {
+                        "rel": "next",
+                        "href": "https://api.example.com/users?page=2&per_page=10",
+                        "method": "GET"
+                    }
+                ]
+            }
+        }
