@@ -56,3 +56,10 @@ Our comprehensive test suite uses PyTest with the `pytest-asyncio` plugin for as
 - **Self-Updates**: Tests user's ability to modify their own information
 - **Administrative Controls**: Verifies role-based access for profile modifications
 - **Session Management**: Tests user logout and session invalidation
+
+## DockerHub Link
+
+You can view the user mangement module tags on DockerHub here: [View DockerHub Repository](https://hub.docker.com/repository/docker/sudeeppanyam/user_management_module/general)
+
+
+
